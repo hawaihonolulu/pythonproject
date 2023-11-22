@@ -1,0 +1,142 @@
+mport plotly.graph_objs as go 
+import plotly.offline as pyo 
+from plotly.subplots import make_subplots   
+import pandas as pd   
+import yfinance as yf   
+  
+def main(): 
+    # Download data from Yahoo Finance for three currency pairs   
+  
+    start_date = "2023-01-01"   
+  
+    end_date = pd.Timestamp.now().strftime('%Y-%m-%d')   
+  
+    currency_pairs = ["EURUSD=X", "EURJPY=X", "EURGBP=X"]   
+  
+    # Create a figure with subplots   
+    fig = make_subplots(rows=len(currency_pairs), cols=1, subplot_titles=[f'{pair} with Buy and Sell Signals' for pair in currency_pairs])   
+  
+    for i, currency_pair in enumerate(currency_pairs):   
+        data = yf.download(currency_pair, start=start_date, end=end_date)   
+        # Calculate moving averages   
+        data['SMA9'] = data['Close'].rolling(window=9).mean()   
+        data['SMA26'] = data['Close'].rolling(window=26).mean()   
+        # Add "Buy" and "Sell" signals   
+        data['Signal'] = 0   
+        data.loc[(data['SMA9'] > data['SMA26']) & (data['SMA9'].shift(1) <= data['SMA26'].shift(1)), 'Signal'] = 1   
+        data.loc[(data['SMA26'] > data['SMA9']) & (data['SMA26'].shift(1) <= data['SMA9'].shift(1)), 'Signal'] = -1   
+        # Add the chart for the current currency pair   
+        fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name=f'Price {currency_pair}'), row=i+1, col=1)   
+        fig.add_trace(go.Scatter(x=data.index, y=data['SMA9'], mode='lines', name='9-period Moving Average', line=dict(color='red')), row=i+1, col=1)   
+        fig.add_trace(go.Scatter(x=data.index, y=data['SMA26'], mode='lines', name='26-period Moving Average', line=dict(color='green')), row=i+1, col=1)   
+        # Mark signals on the chart   
+        buy_signals = data[data['Signal'] == 1]   
+        sell_signals = data[data['Signal'] == -1]   
+        fig.add_trace(go.Scatter(x=buy_signals.index, y=data['SMA26'].loc[buy_signals.index], mode='markers', name='Buy Signal', marker=dict(symbol='triangle-up', size=10, color='green')), row=i+1, col=1)   
+        fig.add_trace(go.Scatter(x=sell_signals.index, y=data['SMA26'].loc[sell_signals.index], mode='markers', name='Sell Signal', marker=dict(symbol='triangle-down', size=10, color='red')), row=i+1, col=1)   
+        last_buy_signal_date = buy_signals.index[-1] if not buy_signals.empty else None   
+        last_sell_signal_date = sell_signals.index[-1] if not sell_signals.empty else None   
+        last_signal_date = max(last_buy_signal_date, last_sell_signal_date)  # Most recent date between buy and sell    
+        last_signal_source = "Buy" if last_signal_date == last_buy_signal_date else "Sell" if last_signal_date == last_sell_signal_date else None   
+        if last_buy_signal_date and last_sell_signal_date:   
+            last_signal_text = f"Last Buy: {last_buy_signal_date.date()}, Last Sell: {last_sell_signal_date.date()}"   
+        elif last_buy_signal_date:   
+            last_signal_text = f"Last Buy: {last_buy_signal_date.date()}, No recent sell"   
+        elif last_sell_signal_date:   
+            last_signal_text = f"No recent buy, Last Sell: {last_sell_signal_date.date()}"   
+        else:   
+            last_signal_text = "No recent buy or sell signals"   
+        if last_signal_source:   
+            last_signal_text += f"\nMost recent date: {last_signal_date.date()} (Source: {last_signal_source})"   
+            if last_signal_source == "Buy":   
+                last_signal_text += "\nOpen a long position"   
+            elif last_signal_source == "Sell":   
+                last_signal_text += "\nOpen a short position"   
+        else:   
+            last_signal_source += f"\nMost recent date: N/A"   
+        # Add a specific annotation for each currency pair   
+        pair_annotation_text = last_signal_text   
+        pair_annotation_x_position = 0  # Adjust this value for the horizontal position of the annotation based on the pair index   
+        pair_annotation_y_position = 0.7 - 0.4 * i # Adjust this value for the vertical position of the annotation above the subplot   
+        # Check for the specific phrase in last_signal_text and adjust the color accordingly   
+        if last_signal_source == "\nOpen a long position":   
+            color = 'red'   
+        else:   
+            color = 'green'   
+        fig.add_annotation(text=pair_annotation_text, xref='paper', yref='paper', x=0.5, y=pair_annotation_y_position, showarrow=False, font=dict(size=10, color=color))   
+        fig.update_layout(title=f'{currency_pair} with Buy and Sell Signals', xaxis_title='Date', yaxis_title='Price', showlegend=True)   
+    # Format the global layout   
+    fig.update_layout(height=800, width=1200, title_text="Analysis of Buy and Sell Signals for Different Currency Pairs", showlegend=True,   
+        legend=dict(   
+            orientation="v",  # Legend orientation (vertical)   
+            x=1.05,  # Adjust this value for the horizontal position of the legend (0 left, 1 right)   
+            y=1,  # Adjust this value for the vertical position of the legend (1 top, 0 bottom)   
+            borderwidth=1,  # Add a border around the legend  
+        ),   
+    )   
+    # Remove duplicate entries in the legend  
+    legend_entries = set()  
+    for trace in fig.data:  
+        if trace.name not in legend_entries:  
+            legend_entries.add(trace.name)  
+        else:  
+            trace.showlegend = False  
+    # Show the chart   
+    fig.show()   
+    # Convert the chart to HTML code 
+    graph_html = fig.to_html(full_html=False) 
+  
+    content = f""" 
+    <!DOCTYPE html> 
+    <html> 
+    <head> 
+        <title> Python Project - M1 Audit-Expertise ESSCA </title> 
+        <style> 
+            body {{ 
+                font-family: Arial, sans-serif; 
+                max-width: 800px; 
+                margin: 0 auto; 
+            }} 
+            h1, h2 {{ 
+                color: #1f6ca6; 
+            }} 
+            p {{ 
+                color: #333; 
+                word-wrap: break-word; 
+            }} 
+            a {{ 
+                color: #1f6ca6; 
+                text-decoration: none; 
+            }} 
+        </style> 
+    </head> 
+    <body> 
+        <h1> Python Project - M1 Audit-Expertise ESSCA</h1> 
+        <p>Hello everyone! We are three students in the Audit and Expertise Master's programme. Our first year of the Master's programme at ESSCA Business School gave us a solid grounding in coding thanks to our "Data Analytics" course taught by our professor Miia CHABOT.</p> 
+        <p>We decided to work on the exchange rates of three currencies in relation to the euro: the dollar (USD), the yen (JPY) and the Ground Britain Pound (GBP).</p> 
+  
+        <h2>Focus: Currency analysis using interactive graphs</h2> 
+         
+        <!-- Replace the image tag with the Plotly graph HTML --> 
+        {graph_html} 
+  
+        <p><strong>Goal</strong></p> 
+        <p>Our aim was to present a simplified currency trading strategy using signals. We wanted to create an interactive graph on which you can walk around and observe the different buy and sell points. Below each chart you'll also find the current trend and a tip on which position to open. We were also looking for a simple way to share our rendering so we could reach a wide audience. </p> 
+        <p>Please note that our analyses provided by the program are purely informative and do not constitute financial advice. We accept no responsibility for any financial loss arising from the use of this information.</p> 
+         
+        <p><strong>Procedure</strong></p> 
+        <p>We decided to combine our knowledge of market analysis and code to democratize trading using a python language. We extracted financial data from Yahoo Finance, formatted it on an HTML page and then housed it on a web page.</p> 
+         
+        <!-- You can add other content here if needed --> 
+        <p><strong>By:</strong> Agathe DURAND-OGIER; Armelle RUSSEIL; Gabin RAVETTO</p> 
+  
+    </body> 
+    </html> 
+    """ 
+  
+    with open("example.html", "w", encoding="utf-8") as file: 
+        file.write(content) 
+  
+if __name__ == "__main__": 
+    main() 
+ 
